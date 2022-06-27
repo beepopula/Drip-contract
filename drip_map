@@ -1,0 +1,13 @@
+content0 0.2   post
+content1 0.2   comment
+content2 0.2   subcomment
+content3 0.1   comment to post
+content4 0.04  subcomment to post
+content5 0.1   subcomment to comment
+like     0.02
+be_liked 0.05
+share    0.02
+be_shared 0.05
+share_view 0.05
+report
+report_confirm

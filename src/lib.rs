@@ -93,6 +93,11 @@ impl Contract {
         this
     }
 
+    #[init(ignore_state)]
+    pub fn fix() -> () {
+        env::storage_remove(b"m");
+    }
+
     pub fn set_coe(&mut self, key: String, coe: U128) {
         assert!(self.owner_id == env::predecessor_account_id(), "owner only");
         self.coe_map.insert(&key, &coe.0);
@@ -113,6 +118,7 @@ impl Contract {
         self.contract_whitelist.remove(&contract_id);
     }
 
+    #[payable]
     pub fn collect(&mut self, collects: Vec<AccountId>) {
         let sender_id = env::predecessor_account_id();
         assert!(self.token.storage_balance_of(sender_id.clone()).is_some(), "not registred");
@@ -138,7 +144,8 @@ impl Contract {
 
         let batch_promise = env::promise_and(&promises[..]);
         env::promise_then(batch_promise, env::current_account_id(), "resolve_collect", json!({
-            "collects": serde_json::to_string(&collects).unwrap()
+            "collects": serde_json::to_string(&collects).unwrap(),
+            "account_id": sender_id
         }).to_string().as_bytes(), 0, (env::prepaid_gas() - env::used_gas()) / (collects.len() as u64 + 2));
 
         assert!(promises.len() > 0, "failed");
