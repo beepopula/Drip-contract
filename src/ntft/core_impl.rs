@@ -1,15 +1,21 @@
-use near_contract_standards::fungible_token::core::FungibleTokenCore;
-use near_contract_standards::fungible_token::events::{FtBurn, FtTransfer};
-use near_contract_standards::fungible_token::receiver::ext_ft_receiver;
-use near_contract_standards::fungible_token::resolver::{ext_ft_resolver, FungibleTokenResolver};
+
+use near_contract_standards::fungible_token::events::{FtMint, FtBurn, FtTransfer};
+
 use near_sdk::borsh::{self, BorshDeserialize, BorshSerialize};
 use near_sdk::collections::{LookupMap, UnorderedMap};
 use near_sdk::json_types::U128;
 use near_sdk::serde::{Serialize, Deserialize};
+use near_sdk::serde_json::json;
 use near_sdk::{
     assert_one_yocto, env, log, require, AccountId, Balance, Gas, IntoStorageKey, PromiseOrValue,
     PromiseResult, StorageUsage,
 };
+
+use crate::ntft::receiver::ext_ft_receiver;
+use crate::ntft::resolver::ext_ft_resolver;
+
+use super::core::FungibleTokenCore;
+use super::resolver::FungibleTokenResolver;
 
 const GAS_FOR_RESOLVE_TRANSFER: Gas = Gas(5_000_000_000_000);
 const GAS_FOR_FT_TRANSFER_CALL: Gas = Gas(25_000_000_000_000 + GAS_FOR_RESOLVE_TRANSFER.0);
@@ -65,6 +71,12 @@ impl FungibleToken {
                 .total_supply
                 .checked_add(amount)
                 .unwrap_or_else(|| env::panic_str("Total supply overflow"));
+            FtMint {
+                owner_id: account_id,
+                amount: &amount.into(),
+                memo: Some(&json!(contract_id).to_string()),
+            }
+            .emit();
         } else {
             env::panic_str("Balance overflow");
         }
@@ -80,6 +92,12 @@ impl FungibleToken {
                 .total_supply
                 .checked_sub(amount)
                 .unwrap_or_else(|| env::panic_str("Total supply overflow"));
+            FtBurn {
+                owner_id: account_id,
+                amount: &amount.into(),
+                memo: Some(&json!(contract_id).to_string()),
+            }
+            .emit();
         } else {
             env::panic_str("The account doesn't have enough balance");
         }
@@ -113,6 +131,29 @@ impl FungibleTokenCore for FungibleToken {
         unreachable!()
     }
 
+    fn ft_burn_call(
+        &mut self,
+        contract_id: AccountId,
+        amount: U128,
+        msg: String,
+    ) -> PromiseOrValue<U128> {
+        assert_one_yocto();
+        require!(env::prepaid_gas() > GAS_FOR_FT_TRANSFER_CALL, "More gas is required");
+        let sender_id = env::predecessor_account_id();
+        let amount: Balance = amount.into();
+        self.internal_withdraw(&sender_id, amount, Some(contract_id.clone()));
+        // Initiating receiver's call and the callback
+        ext_ft_receiver::ext(contract_id.clone())
+        .with_static_gas(env::prepaid_gas() - GAS_FOR_FT_TRANSFER_CALL)
+        .ft_on_burn(sender_id.clone(), amount.into(), msg)
+        .then(
+            ext_ft_resolver::ext(env::current_account_id())
+                .with_static_gas(GAS_FOR_RESOLVE_TRANSFER)
+                .ft_resolve_burn(sender_id, amount.into(), contract_id),
+        )
+        .into()
+    }
+
     fn ft_total_supply(&self) -> U128 {
         self.total_supply.into()
     }
@@ -125,6 +166,39 @@ impl FungibleTokenCore for FungibleToken {
     }
 }
 
+impl FungibleToken {
+    /// Internal method that returns the amount of burned tokens in a corner case when the sender
+    /// has deleted (unregistered) their account while the `ft_transfer_call` was still in flight.
+    /// Returns (Used token amount, Burned token amount)
+    pub fn internal_ft_resolve_burn(
+        &mut self,
+        owner_id: &AccountId,
+        amount: U128,
+        contract_id: AccountId
+    ) -> (u128, u128) {
+        let amount: Balance = amount.into();
+
+        // Get the unused amount from the `ft_on_transfer` call result.
+        let refund_amount = match env::promise_result(0) {
+            PromiseResult::NotReady => env::abort(),
+            PromiseResult::Successful(value) => {
+                if let Ok(unused_amount) = near_sdk::serde_json::from_slice::<U128>(&value) {
+                    std::cmp::min(amount, unused_amount.0)
+                } else {
+                    amount
+                }
+            }
+            PromiseResult::Failed => amount,
+        };
+
+        if refund_amount > 0 {
+            self.internal_deposit(owner_id, refund_amount, Some(contract_id));
+            return (amount - refund_amount, 0);
+        }
+        (amount, 0)
+    }
+}
+
 impl FungibleTokenResolver for FungibleToken {
     fn ft_resolve_transfer(
         &mut self,
@@ -134,6 +208,16 @@ impl FungibleTokenResolver for FungibleToken {
     ) -> U128 {
         unreachable!()
     }
+
+    fn ft_resolve_burn(
+        &mut self,
+        owner_id: AccountId,
+        amount: U128,
+        contract_id: AccountId
+    ) -> U128 {
+        self.internal_ft_resolve_burn(&owner_id, amount, contract_id).0.into()
+    }
+
 }
 
 impl FungibleToken {

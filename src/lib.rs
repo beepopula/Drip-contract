@@ -16,15 +16,16 @@ NOTES:
     keys on its account.
 */
 
-use ft::core_impl::FungibleToken;
+use ntft::core_impl::FungibleToken;
+use ntft::core::FungibleTokenCore;
+use ntft::resolver::FungibleTokenResolver;
 use near_contract_standards::fungible_token::metadata::{
     FungibleTokenMetadata, FungibleTokenMetadataProvider, FT_METADATA_SPEC,
 };
-use near_contract_standards::fungible_token::resolver::FungibleTokenResolver;
+
 use near_contract_standards::storage_management::{
     StorageManagement, StorageBalance, StorageBalanceBounds
 };
-use near_contract_standards::fungible_token::core::FungibleTokenCore;
 use near_sdk::borsh::{self, BorshDeserialize, BorshSerialize};
 use near_sdk::collections::{LazyOption, UnorderedMap, UnorderedSet, LookupMap};
 use near_sdk::json_types::{U128};
@@ -35,7 +36,7 @@ use utils::{get_root_id};
 use std::convert::TryFrom;
 
 
-pub mod ft;
+pub mod ntft;
 pub mod utils;
 pub mod resolver;
 pub mod internal;
@@ -48,7 +49,6 @@ pub struct Contract {
     token: FungibleToken,
     metadata: LazyOption<FungibleTokenMetadata>,
     owner_id: AccountId,
-    contract_whitelist: UnorderedSet<AccountId>,
     coe_map: UnorderedMap<String, u128>,
 }
 
@@ -87,7 +87,6 @@ impl Contract {
             token: FungibleToken::new(b"a".to_vec()),
             metadata: LazyOption::new(b"m".to_vec(), Some(&metadata)),
             owner_id,
-            contract_whitelist: UnorderedSet::new(b"c"),
             coe_map: UnorderedMap::new(b"e"),
         };
         this
@@ -108,18 +107,8 @@ impl Contract {
         self.coe_map.remove(&key);
     }
 
-    pub fn add_whitelist(&mut self, contract_id: AccountId) {
-        assert!(self.owner_id == env::predecessor_account_id(), "owner only");
-        self.contract_whitelist.insert(&contract_id);
-    }
-
-    pub fn del_whitelist(&mut self, contract_id: AccountId) {
-        assert!(self.owner_id == env::predecessor_account_id(), "owner only");
-        self.contract_whitelist.remove(&contract_id);
-    }
-
     #[payable]
-    pub fn collect(&mut self, collects: Vec<AccountId>) {
+    pub fn ft_collect(&mut self, collects: Vec<AccountId>) {
         let sender_id = env::predecessor_account_id();
         assert!(self.token.storage_balance_of(sender_id.clone()).is_some(), "not registred");
 
@@ -134,9 +123,6 @@ impl Contract {
 
         let mut promises: Vec<u64> = Vec::new();
         for contract_id in collects.clone() {
-            if !self.check_contract_id(contract_id.clone()) {
-                continue;
-            }
             let new_promise = env::promise_create(contract_id.clone(), "collect_drip", json!({
             }).to_string().as_bytes(), 0, (env::prepaid_gas() - env::used_gas()) / (collects.len() as u64 + 2));
             promises.push(new_promise);
@@ -150,6 +136,7 @@ impl Contract {
 
         assert!(promises.len() > 0, "failed");
     }
+
 }
 
 impl_fungible_token_core!(Contract, token);

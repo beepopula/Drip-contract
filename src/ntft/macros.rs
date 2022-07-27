@@ -4,7 +4,6 @@
 macro_rules! impl_fungible_token_core {
     ($contract: ident, $token: ident $(, $on_tokens_burned_fn:ident)?) => {
 
-
         #[near_bindgen]
         impl FungibleTokenCore for $contract {
             #[payable]
@@ -35,25 +34,39 @@ macro_rules! impl_fungible_token_core {
             fn ft_balance_of(&self, account_id: AccountId) -> U128 {
                 self.$token.ft_balance_of(account_id)
             }
+
+            fn ft_burn_call(
+                &mut self,
+                contract_id: AccountId, 
+                amount: U128, 
+                msg: String
+            ) -> PromiseOrValue<U128> {
+                self.$token.ft_burn_call(contract_id, amount, msg)
+            }
         }
 
-        // #[near_bindgen]
-        // impl FungibleTokenResolver for $contract {
-        //     #[private]
-        //     fn ft_resolve_transfer(
-        //         &mut self,
-        //         sender_id: AccountId,
-        //         receiver_id: AccountId,
-        //         amount: U128,
-        //     ) -> U128 {
-        //         let (used_amount, burned_amount) =
-        //             self.$token.internal_ft_resolve_transfer(&sender_id, receiver_id, amount);
-        //         if burned_amount > 0 {
-        //             $(self.$on_tokens_burned_fn(sender_id, burned_amount);)?
-        //         }
-        //         used_amount.into()
-        //     }
-        // }
+        #[near_bindgen]
+        impl FungibleTokenResolver for $contract {
+            #[private]
+            fn ft_resolve_transfer(
+                &mut self,
+                sender_id: AccountId,
+                receiver_id: AccountId,
+                amount: U128,
+            ) -> U128 {
+                self.$token.ft_resolve_transfer(sender_id, receiver_id, amount).into()
+            }
+
+            #[private]
+            fn ft_resolve_burn(
+                &mut self,
+                owner_id: AccountId, 
+                amount: U128, 
+                contract_id: AccountId
+            ) -> U128 {
+                self.$token.ft_resolve_burn(owner_id, amount, contract_id)
+            }   
+        }
     };
 }
 
