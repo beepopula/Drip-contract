@@ -17,7 +17,7 @@ NOTES:
 */
 
 use ntft::core_impl::FungibleToken;
-use ntft::core::FungibleTokenCore;
+use ntft::core::{FungibleTokenCore, TokenSource, TokenDest};
 use ntft::resolver::FungibleTokenResolver;
 use near_contract_standards::fungible_token::metadata::{
     FungibleTokenMetadata, FungibleTokenMetadataProvider, FT_METADATA_SPEC,
@@ -34,6 +34,8 @@ use near_sdk::serde_json::{json, self};
 use near_sdk::{env, log, near_bindgen, AccountId, Balance, PanicOnDefault, PromiseOrValue, Promise};
 use utils::{get_root_id};
 use std::convert::TryFrom;
+
+use crate::ntft::core::FungibleTokenAccount;
 
 
 pub mod ntft;
@@ -71,7 +73,7 @@ impl Contract {
                 icon: Some(DATA_IMAGE_SVG_NEAR_ICON.to_string()),
                 reference: None,
                 reference_hash: None,
-                decimals: 2,
+                decimals: 24,
             },
         )
     }
@@ -97,16 +99,6 @@ impl Contract {
         env::storage_remove(b"m");
     }
 
-    pub fn set_coe(&mut self, key: String, coe: U128) {
-        assert!(self.owner_id == env::predecessor_account_id(), "owner only");
-        self.coe_map.insert(&key, &coe.0);
-    }
-
-    pub fn del_coe(&mut self, key: String) {
-        assert!(self.owner_id == env::predecessor_account_id(), "owner only");
-        self.coe_map.remove(&key);
-    }
-
     #[payable]
     pub fn ft_collect(&mut self, collects: Vec<AccountId>) {
         let sender_id = env::predecessor_account_id();
@@ -115,7 +107,7 @@ impl Contract {
         let account = self.token.accounts.get(&sender_id).unwrap();
         let mut unregister_count = 0;
         collects.iter().for_each(|contract_id| {
-            if account.get(&Some(contract_id.clone())).is_none() {
+            if account.is_registered(&contract_id) == false {
                 unregister_count += 1;
             }
         });

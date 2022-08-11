@@ -1,4 +1,7 @@
 
+use std::collections::{HashSet, HashMap};
+use std::hash::Hash;
+
 use near_contract_standards::fungible_token::events::{FtMint, FtBurn, FtTransfer};
 
 use near_sdk::borsh::{self, BorshDeserialize, BorshSerialize};
@@ -14,11 +17,87 @@ use near_sdk::{
 use crate::ntft::receiver::ext_ft_receiver;
 use crate::ntft::resolver::ext_ft_resolver;
 
-use super::core::FungibleTokenCore;
+use super::core::{FungibleTokenCore, TokenSource, TokenDest, FungibleTokenAccount};
 use super::resolver::FungibleTokenResolver;
 
 const GAS_FOR_RESOLVE_TRANSFER: Gas = Gas(5_000_000_000_000);
 const GAS_FOR_FT_TRANSFER_CALL: Gas = Gas(25_000_000_000_000 + GAS_FOR_RESOLVE_TRANSFER.0);
+
+#[derive(BorshDeserialize, BorshSerialize)]
+pub struct Account {
+    pub contract_ids: UnorderedMap<Option<AccountId>, HashMap<TokenSource, Balance>>,
+}
+
+impl Account {
+    pub fn new(prefix: String) -> Self {
+        let mut balance = HashMap::new();
+        balance.insert(TokenSource::Building, 0 as Balance);
+        balance.insert(TokenSource::Fueling, 0 as Balance);
+        let mut this = Self {
+            contract_ids: UnorderedMap::new(prefix.as_bytes())
+        };
+        this.contract_ids.insert(&(None as Option<AccountId>), &balance);
+        this
+    }
+}
+
+impl FungibleTokenAccount for Account {
+
+    fn deposit(&mut self, contract_id: &AccountId, token_source: &TokenSource, amount: Balance) -> bool {
+        for contract_id  in [Some(contract_id.clone()), None] {
+            let mut token_map = self.contract_ids.get(&contract_id).unwrap_or(HashMap::new());
+            let mut balance = token_map.get(&token_source).unwrap_or(&(0 as Balance));
+            if let Some(new_balance) = balance.checked_add(amount) {
+                token_map.insert(token_source.clone(), new_balance);
+            } else {
+                env::panic_str("Balance overflow");
+            }
+            self.contract_ids.insert(&contract_id, &token_map);
+        }
+        true
+    }
+
+    fn withdraw(&mut self, contract_id: &AccountId, token_dest: &TokenDest, amount: Balance) -> bool {
+        for contract_id  in [Some(contract_id.clone()), None] {
+            let mut token_map = self.contract_ids.get(&contract_id).expect("not enough balance");
+            match token_dest {
+                TokenDest::Building => {
+                    let fueling_balance = token_map.get(&TokenSource::Fueling).unwrap_or(&(0 as Balance)).clone();
+                    let building_balance = token_map.get(&TokenSource::Building).unwrap_or(&(0 as Balance)).clone();
+                    assert!(fueling_balance + building_balance >= amount, "not enough balance");
+                    if let Some(new_fuleing_balance) = fueling_balance.checked_sub(amount) {
+                        token_map.insert(TokenSource::Fueling, new_fuleing_balance);
+                    } else {
+                        token_map.insert(TokenSource::Fueling, 0);
+                        if let Some(new_building_balance) = building_balance.checked_sub(amount - fueling_balance) {
+                            token_map.insert(TokenSource::Building, new_building_balance);
+                        }
+                    }
+                },
+                TokenDest::MemberRewards => {
+                    let mut building_balance = token_map.get(&TokenSource::Fueling).unwrap_or(&(0 as Balance));
+                    if let Some(new_building_balance) = building_balance.checked_sub(amount) {
+                        token_map.insert(TokenSource::Building, new_building_balance);
+                    } else {
+                        env::panic_str("not enough balance");
+                    }
+                }
+            }
+            self.contract_ids.insert(&contract_id, &token_map);
+        }
+        true
+    }
+
+    fn get_balance(&self, contract_id: &Option<AccountId>, token_source: &Option<TokenSource>) -> u128 {
+        0
+    }
+
+    fn is_registered(&self, contract_id: &AccountId) -> bool {
+        self.contract_ids.get(&Some(contract_id.clone())).is_some()
+    }
+}
+
+pub type TotalSupply = Account;
 
 /// Implementation of a FungibleToken standard.
 /// Allows to include NEP-141 compatible token to any contract.
@@ -32,10 +111,10 @@ const GAS_FOR_FT_TRANSFER_CALL: Gas = Gas(25_000_000_000_000 + GAS_FOR_RESOLVE_T
 #[derive(BorshDeserialize, BorshSerialize)]
 pub struct FungibleToken {
     /// AccountID -> Account balance.
-    pub accounts: LookupMap<AccountId, UnorderedMap<Option<AccountId>, Balance>>,
+    pub accounts: LookupMap<AccountId, Account>,
 
     /// Total supply of the all token.
-    pub total_supply: Balance,
+    pub total_supply: TotalSupply,
 
     /// The storage size in bytes for one account.
     pub account_storage_usage: StorageUsage,
@@ -47,7 +126,7 @@ impl FungibleToken {
         S: IntoStorageKey,
     {
         let mut this =
-            Self { accounts: LookupMap::new(prefix), total_supply: 0, account_storage_usage: 0 };
+            Self { accounts: LookupMap::new(prefix), total_supply: TotalSupply::new("total_supply".to_string()), account_storage_usage: 0 };
         this.measure_account_storage_usage();
         this
     }
@@ -55,52 +134,41 @@ impl FungibleToken {
     fn measure_account_storage_usage(&mut self) {
         let initial_storage_usage = env::storage_usage();
         let tmp_account_id = AccountId::new_unchecked("a".repeat(64));
-        self.accounts.insert(&tmp_account_id, &UnorderedMap::new("contracts".as_bytes()));
+        self.accounts.insert(&tmp_account_id, &Account::new(tmp_account_id.to_string()));
         self.account_storage_usage = env::storage_usage() - initial_storage_usage;
         env::storage_remove("contracts".as_bytes());
         self.accounts.remove(&tmp_account_id);
     }
 
-    pub fn internal_deposit(&mut self, account_id: &AccountId, amount: Balance, contract_id: Option<AccountId>) {
+    pub fn internal_deposit(&mut self, account_id: &AccountId, amount: Balance, contract_id: &AccountId, token_source: &TokenSource) {
         let mut account = self.accounts.get(&account_id).expect(format!("The account {} is not registered", &account_id.to_string()).as_str());
-        let balance = account.get(&contract_id).expect(format!("The contract {} is not registered", &account_id.to_string()).as_str());
-        if let Some(new_balance) = balance.checked_add(amount) {
-            account.insert(&contract_id, &new_balance);
-            self.accounts.insert(account_id, &account);
-            self.total_supply = self
-                .total_supply
-                .checked_add(amount)
-                .unwrap_or_else(|| env::panic_str("Total supply overflow"));
-            FtMint {
-                owner_id: account_id,
-                amount: &amount.into(),
-                memo: Some(&json!(contract_id).to_string()),
-            }
-            .emit();
-        } else {
-            env::panic_str("Balance overflow");
+        account.deposit(contract_id, token_source, amount);
+        self.accounts.insert(account_id, &account);
+
+        self.total_supply.deposit(contract_id, token_source, amount);
+
+        FtMint {
+            owner_id: account_id,
+            amount: &amount.into(),
+            memo: Some(&json!(contract_id).to_string()),
         }
+        .emit();
+
     }
 
-    pub fn internal_withdraw(&mut self, account_id: &AccountId, amount: Balance, contract_id: Option<AccountId>) {
+    pub fn internal_withdraw(&mut self, account_id: &AccountId, amount: Balance, contract_id: &AccountId, token_dest: &TokenDest) {
         let mut account = self.accounts.get(&account_id).expect(format!("The account {} is not registered", &account_id.to_string()).as_str());
-        let balance = account.get(&contract_id).expect(format!("The contract {} is not registered", &account_id.to_string()).as_str());
-        if let Some(new_balance) = balance.checked_sub(amount) {
-            account.insert(&contract_id, &new_balance);
-            self.accounts.insert(account_id, &account);
-            self.total_supply = self
-                .total_supply
-                .checked_sub(amount)
-                .unwrap_or_else(|| env::panic_str("Total supply overflow"));
-            FtBurn {
-                owner_id: account_id,
-                amount: &amount.into(),
-                memo: Some(&json!(contract_id).to_string()),
-            }
-            .emit();
-        } else {
-            env::panic_str("The account doesn't have enough balance");
+        account.withdraw(contract_id, token_dest, amount);
+        self.accounts.insert(account_id, &account);
+
+        self.total_supply.withdraw(contract_id, token_dest, amount);
+
+        FtBurn {
+            owner_id: account_id,
+            amount: &amount.into(),
+            memo: Some(&json!(contract_id).to_string()),
         }
+        .emit();
     }
 
 
@@ -109,7 +177,7 @@ impl FungibleToken {
             Some(v) => v.to_string(),
             None => "".to_string()
         };
-        if self.accounts.insert(account_id, &UnorderedMap::new((account_id.to_string() + &contract_id).as_bytes())).is_some() {
+        if self.accounts.insert(account_id, &Account::new(account_id.to_string())).is_some() {
             env::panic_str("The account is already registered");
         }
     }
@@ -134,6 +202,7 @@ impl FungibleTokenCore for FungibleToken {
     fn ft_burn_call(
         &mut self,
         contract_id: AccountId,
+        token_dest: TokenDest,
         amount: U128,
         msg: String,
     ) -> PromiseOrValue<U128> {
@@ -141,7 +210,7 @@ impl FungibleTokenCore for FungibleToken {
         require!(env::prepaid_gas() > GAS_FOR_FT_TRANSFER_CALL, "More gas is required");
         let sender_id = env::predecessor_account_id();
         let amount: Balance = amount.into();
-        self.internal_withdraw(&sender_id, amount, Some(contract_id.clone()));
+        self.internal_withdraw(&sender_id, amount, &contract_id, &token_dest);
         // Initiating receiver's call and the callback
         ext_ft_receiver::ext(contract_id.clone())
         .with_static_gas(env::prepaid_gas() - GAS_FOR_FT_TRANSFER_CALL)
@@ -149,18 +218,18 @@ impl FungibleTokenCore for FungibleToken {
         .then(
             ext_ft_resolver::ext(env::current_account_id())
                 .with_static_gas(GAS_FOR_RESOLVE_TRANSFER)
-                .ft_resolve_burn(sender_id, amount.into(), contract_id),
+                .ft_resolve_burn(sender_id, amount.into(), contract_id, token_dest),
         )
         .into()
     }
 
-    fn ft_total_supply(&self) -> U128 {
-        self.total_supply.into()
+    fn ft_total_supply(&self, contract_id: Option<AccountId>, token_source: Option<TokenSource>) -> U128 {
+        self.total_supply.get_balance(&contract_id, &token_source).into()
     }
 
-    fn ft_balance_of(&self, account_id: AccountId) -> U128 {
+    fn ft_balance_of(&self, account_id: AccountId, contract_id: Option<AccountId>, token_source: Option<TokenSource>) -> U128 {
         match self.accounts.get(&account_id) {
-            Some(account) => account.get(&None).unwrap_or(0).into(),
+            Some(account) => account.get_balance(&contract_id, &token_source).into(),
             None => 0.into()
         }
     }
@@ -174,7 +243,8 @@ impl FungibleToken {
         &mut self,
         owner_id: &AccountId,
         amount: U128,
-        contract_id: AccountId
+        contract_id: AccountId,
+        token_dest: TokenDest
     ) -> (u128, u128) {
         let amount: Balance = amount.into();
 
@@ -192,7 +262,7 @@ impl FungibleToken {
         };
 
         if refund_amount > 0 {
-            self.internal_deposit(owner_id, refund_amount, Some(contract_id));
+            self.internal_deposit(owner_id, refund_amount, &contract_id, &TokenSource::Fueling);
             return (amount - refund_amount, 0);
         }
         (amount, 0)
@@ -213,18 +283,10 @@ impl FungibleTokenResolver for FungibleToken {
         &mut self,
         owner_id: AccountId,
         amount: U128,
-        contract_id: AccountId
+        contract_id: AccountId,
+        token_dest: TokenDest
     ) -> U128 {
-        self.internal_ft_resolve_burn(&owner_id, amount, contract_id).0.into()
+        self.internal_ft_resolve_burn(&owner_id, amount, contract_id, token_dest).0.into()
     }
 
-}
-
-impl FungibleToken {
-    pub fn ft_balance_by_contract(&self, account_id: &AccountId, contract_id: Option<AccountId>) -> U128 {
-        match self.accounts.get(&account_id) {
-            Some(account) => account.get(&contract_id).unwrap_or(0).into(),
-            None => 0.into()
-        }
-    }  
 }

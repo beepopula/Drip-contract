@@ -1,4 +1,5 @@
 use near_sdk::{ext_contract, json_types::U128, AccountId};
+use crate::*;
 
 #[ext_contract(ext_ft_resolver)]
 pub trait FungibleTokenResolver {
@@ -13,6 +14,7 @@ pub trait FungibleTokenResolver {
         &mut self,
         owner_id: AccountId,
         amount: U128,
-        contract_id: AccountId
+        contract_id: AccountId,
+        token_dest: TokenDest
     ) -> U128;
 }

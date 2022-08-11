@@ -27,21 +27,22 @@ macro_rules! impl_fungible_token_core {
                 self.$token.ft_transfer_call(receiver_id, amount, memo, msg)
             }
 
-            fn ft_total_supply(&self) -> U128 {
-                self.$token.ft_total_supply()
+            fn ft_total_supply(&self, contract_id: Option<AccountId>, token_source: Option<TokenSource>) -> U128 {
+                self.$token.ft_total_supply(contract_id, token_source)
             }
 
-            fn ft_balance_of(&self, account_id: AccountId) -> U128 {
-                self.$token.ft_balance_of(account_id)
+            fn ft_balance_of(&self, account_id: AccountId, contract_id: Option<AccountId>, token_source: Option<TokenSource>) -> U128 {
+                self.$token.ft_balance_of(account_id, contract_id, token_source)
             }
 
             fn ft_burn_call(
                 &mut self,
                 contract_id: AccountId, 
+                token_dest: TokenDest,
                 amount: U128, 
                 msg: String
             ) -> PromiseOrValue<U128> {
-                self.$token.ft_burn_call(contract_id, amount, msg)
+                self.$token.ft_burn_call(contract_id, token_dest, amount, msg)
             }
         }
 
@@ -62,9 +63,10 @@ macro_rules! impl_fungible_token_core {
                 &mut self,
                 owner_id: AccountId, 
                 amount: U128, 
-                contract_id: AccountId
+                contract_id: AccountId,
+                token_dest: TokenDest
             ) -> U128 {
-                self.$token.ft_resolve_burn(owner_id, amount, contract_id)
+                self.$token.ft_resolve_burn(owner_id, amount, contract_id, token_dest)
             }   
         }
     };

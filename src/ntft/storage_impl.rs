@@ -2,6 +2,7 @@ use near_contract_standards::storage_management::{StorageBalance, StorageBalance
 use near_sdk::json_types::U128;
 use near_sdk::{assert_one_yocto, env, log, AccountId, Balance, Promise};
 
+use super::core::{FungibleTokenAccount, TokenDest};
 use super::core_impl::FungibleToken;
 
 impl FungibleToken {
@@ -15,21 +16,23 @@ impl FungibleToken {
         let account_id = env::predecessor_account_id();
         let force = force.unwrap_or(false);
         let account = self.accounts.get(&account_id).expect(format!("The account {} is not registered", &account_id.to_string()).as_str());
-        if let Some(balance) = account.get(&None) {
-            if balance == 0 || force {
-                self.accounts.remove(&account_id);
-                self.total_supply -= balance;
-                Promise::new(account_id.clone()).transfer(self.storage_balance_bounds().min.0 + 1);
-                Some((account_id, balance))
-            } else {
-                env::panic_str(
-                    "Can't unregister the account with the positive balance without force",
-                )
+        let balance = account.get_balance(&None, &None);
+        if balance > 0 && force{
+            for (contract_id, token_map) in account.contract_ids.iter() {
+                if let Some(contract_id) = contract_id {
+                    let total = self.total_supply.get_balance(&Some(contract_id.clone()), &None);
+                    self.total_supply.withdraw(&contract_id, &TokenDest::Building, total);
+                }
             }
         } else {
-            log!("The account {} is not registered", &account_id);
-            None
+            env::panic_str(
+                "Can't unregister the account with the positive balance without force",
+            )
         }
+
+        self.accounts.remove(&account_id);
+        Promise::new(account_id.clone()).transfer(self.storage_balance_bounds().min.0 + 1);
+        Some((account_id, balance))
     }
 
     fn internal_storage_balance_of(&self, account_id: &AccountId) -> Option<StorageBalance> {

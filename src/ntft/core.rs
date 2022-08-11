@@ -1,7 +1,40 @@
+
+use near_sdk::Balance;
+use near_sdk::borsh::{self, BorshDeserialize, BorshSerialize};
 use near_sdk::ext_contract;
 use near_sdk::json_types::U128;
 use near_sdk::AccountId;
 use near_sdk::PromiseOrValue;
+use near_sdk::serde::{Serialize, Deserialize};
+
+#[derive(BorshDeserialize, BorshSerialize, PartialOrd, PartialEq, Eq, Hash)]
+#[derive(Serialize, Deserialize, Clone)]
+#[serde(crate = "near_sdk::serde")]
+pub enum TokenSource {
+    Building,
+    Fueling
+}
+
+#[derive(BorshDeserialize, BorshSerialize, PartialOrd, PartialEq, Eq, Hash)]
+#[derive(Serialize, Deserialize, Clone)]
+#[serde(crate = "near_sdk::serde")]
+pub enum TokenDest {
+    Building,
+    MemberRewards
+}
+
+pub trait FungibleTokenAccount {
+    fn deposit(&mut self, contract_id: &AccountId, token_source: &TokenSource, amount: Balance) -> bool;
+
+    fn withdraw(&mut self, contract_id: &AccountId, token_dest: &TokenDest, amount: Balance) -> bool;
+
+    fn get_balance(&self, contract_id: &Option<AccountId>, token_source: &Option<TokenSource>) -> u128;
+
+    fn is_registered(&self, contract_id: &AccountId) -> bool;
+}
+
+
+
 
 #[ext_contract(ext_ft_core)]
 pub trait FungibleTokenCore {
@@ -51,13 +84,14 @@ pub trait FungibleTokenCore {
     fn ft_burn_call(
         &mut self,
         contract_id: AccountId,
+        token_dest: TokenDest,
         amount: U128,
         msg: String,
     ) -> PromiseOrValue<U128>;
 
     /// Returns the total supply of the token in a decimal string representation.
-    fn ft_total_supply(&self) -> U128;
+    fn ft_total_supply(&self, contract_id: Option<AccountId>, token_source: Option<TokenSource>) -> U128;
 
     /// Returns the balance of the account. If the account doesn't exist must returns `"0"`.
-    fn ft_balance_of(&self, account_id: AccountId) -> U128;
+    fn ft_balance_of(&self, account_id: AccountId, contract_id: Option<AccountId>, token_source: Option<TokenSource>) -> U128;
 }
