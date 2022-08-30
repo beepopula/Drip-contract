@@ -155,7 +155,7 @@ impl Contract {
         env::promise_then(batch_promise, env::current_account_id(), "resolve_collect", json!({
             "collects": collects,
             "account_id": sender_id
-        }).to_string().as_bytes(), 0, (RESOLVE_COLLECT_DRIP_GAS_X * collects.len() as u64 + RESOLVE_COLLECT_DRIP_GAS_BASE).into());
+        }).to_string().as_bytes(), 0, env::prepaid_gas() - env::used_gas() - Gas::from(RESOLVE_COLLECT_DRIP_GAS_BASE));
 
         assert!(promises.len() > 0, "failed");
     }
