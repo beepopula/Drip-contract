@@ -89,7 +89,22 @@ impl FungibleTokenAccount for Account {
     }
 
     fn get_balance(&self, contract_id: &Option<AccountId>, token_source: &Option<TokenSource>) -> u128 {
-        0
+        match self.contract_ids.get(contract_id) {
+            Some(token_map) => {
+                match token_source {
+                    Some(token_source) => *token_map.get(token_source).unwrap_or(&0),
+                    None => {
+                        let mut total = 0;
+                        for (_, balance) in token_map {
+                            total += balance;
+                        }
+                        total
+                    }
+                }
+                
+            },
+            None => 0
+        }
     }
 
     fn is_registered(&self, contract_id: &AccountId) -> bool {
@@ -150,7 +165,9 @@ impl FungibleToken {
         FtMint {
             owner_id: account_id,
             amount: &amount.into(),
-            memo: Some(&json!(contract_id).to_string()),
+            memo: Some(&json!({
+                "contract_id": contract_id
+            }).to_string()),
         }
         .emit();
 
