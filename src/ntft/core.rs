@@ -12,7 +12,8 @@ use near_sdk::serde::{Serialize, Deserialize};
 #[serde(crate = "near_sdk::serde")]
 pub enum TokenSource {
     Building,
-    Fueling
+    Fueling,
+    NoAuth
 }
 
 #[derive(BorshDeserialize, BorshSerialize, PartialOrd, PartialEq, Eq, Hash)]

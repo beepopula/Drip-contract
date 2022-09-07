@@ -33,6 +33,7 @@ use near_sdk::serde::{Serialize, Deserialize};
 use near_sdk::serde_json::{json, self};
 use near_sdk::{env, log, near_bindgen, AccountId, Balance, PanicOnDefault, PromiseOrValue, Promise, Gas};
 use utils::{get_root_id};
+use std::collections::HashSet;
 use std::convert::TryFrom;
 
 use crate::ntft::core::FungibleTokenAccount;
@@ -51,6 +52,7 @@ pub struct Contract {
     token: FungibleToken,
     metadata: LazyOption<FungibleTokenMetadata>,
     owner_id: AccountId,
+    white_list: HashSet<AccountId>
 }
 
 #[near_bindgen]
@@ -80,7 +82,7 @@ impl Contract {
             FungibleTokenMetadata {
                 spec: FT_METADATA_SPEC.to_string(),
                 name: "Popula Drip".to_string(),
-                symbol: "DRP".to_string(),
+                symbol: "DRIP".to_string(),
                 icon: Some(DATA_IMAGE_SVG_NEAR_ICON.to_string()),
                 reference: None,
                 reference_hash: None,
@@ -100,6 +102,7 @@ impl Contract {
             token: FungibleToken::new(b"a".to_vec()),
             metadata: LazyOption::new(b"m".to_vec(), Some(&metadata)),
             owner_id,
+            white_list: HashSet::new()
         };
         this
     }
@@ -112,13 +115,21 @@ impl Contract {
         Self {
             token: old_contract.token,
             metadata: old_contract.metadata,
-            owner_id: old_contract.owner_id
+            owner_id: old_contract.owner_id,
+            white_list: HashSet::new()
         }
     }
 
     #[init(ignore_state)]
     pub fn fix() -> () {
         env::storage_remove(b"m");
+    }
+
+    pub fn set_white_list(&mut self, contract_id: AccountId, del: bool) {
+        match del {
+            true => self.white_list.remove(&contract_id),
+            false => self.white_list.insert(contract_id)
+        };
     }
 
     #[payable]
