@@ -7,7 +7,7 @@ impl Contract {
         if get_root_id(contract_id.clone()) == get_root_id(env::current_account_id()) || self.white_list.get(&contract_id).is_some() {
             self.token.internal_deposit(&account_id, balance, &contract_id, &TokenSource::Building);
         } else {
-            self.token.internal_deposit(&account_id, balance, &contract_id, &TokenSource::NoAuth);
+            self.token.internal_deposit(&account_id, balance, &contract_id, &TokenSource::Fueling);
         }
         
     }
