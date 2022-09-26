@@ -16,14 +16,17 @@ NOTES:
     keys on its account.
 */
 
-use ntft::core_impl::FungibleToken;
-use ntft::core::{FungibleTokenCore, TokenSource, TokenDest};
-use ntft::resolver::FungibleTokenResolver;
-use near_contract_standards::fungible_token::metadata::{
+use near_non_transferrable_token::fungible_token::core_impl::{FungibleToken, Account};
+use near_non_transferrable_token::fungible_token::core::{FungibleTokenCore, TokenSource};
+use near_non_transferrable_token::fungible_token::account::FungibleTokenAccount;
+use near_non_transferrable_token::fungible_token::sender::FungibleTokenSender;
+use near_non_transferrable_token::fungible_token::resolver::FungibleTokenResolver;
+use near_non_transferrable_token::fungible_token::metadata::{
     FungibleTokenMetadata, FungibleTokenMetadataProvider, FT_METADATA_SPEC,
 };
 
-use near_contract_standards::storage_management::{
+use near_non_transferrable_token::{impl_fungible_token_core, impl_fungible_token_storage};
+use near_non_transferrable_token::storage_management::{
     StorageManagement, StorageBalance, StorageBalanceBounds
 };
 use near_sdk::borsh::{self, BorshDeserialize, BorshSerialize};
@@ -33,13 +36,11 @@ use near_sdk::serde::{Serialize, Deserialize};
 use near_sdk::serde_json::{json, self};
 use near_sdk::{env, log, near_bindgen, AccountId, Balance, PanicOnDefault, PromiseOrValue, Promise, Gas};
 use utils::{get_root_id};
-use std::collections::HashSet;
+use std::collections::{HashSet, HashMap};
 use std::convert::TryFrom;
+use std::str::FromStr;
 
-use crate::ntft::core::FungibleTokenAccount;
 
-
-pub mod ntft;
 pub mod utils;
 pub mod resolver;
 pub mod internal;
@@ -72,6 +73,11 @@ const THIS_FUNCTION_CALL_GAS: u64  = 50_000_000_000_000;
 const COLLECT_DRIP_GAS: u64 = 10_000_000_000_000;
 const RESOLVE_COLLECT_DRIP_GAS_BASE: u64 = 3_000_000_000_000;
 const RESOLVE_COLLECT_DRIP_GAS_X: u64 = 2_000_000_000_000;
+
+#[derive(BorshDeserialize, BorshSerialize)]
+pub struct OldAccount {
+    pub contract_ids: UnorderedMap<Option<AccountId>, HashMap<TokenSource, Balance>>,
+}
 
 #[near_bindgen]
 impl Contract {
@@ -120,11 +126,6 @@ impl Contract {
         }
     }
 
-    #[init(ignore_state)]
-    pub fn fix() -> () {
-        env::storage_remove(b"m");
-    }
-
     pub fn set_white_list(&mut self, contract_id: AccountId, del: bool) {
         match del {
             true => self.white_list.remove(&contract_id),
@@ -140,7 +141,7 @@ impl Contract {
             Some(v) => v.available.0,
             None => {
                 assert!(self.token.account_storage_usage as u128 * env::storage_byte_cost() < env::attached_deposit(), "not registered");
-                self.token.internal_register_account(&sender_id, None);
+                self.token.internal_register_account(&sender_id);
                 0
             }
         };
