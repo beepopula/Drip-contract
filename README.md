@@ -1,27 +1,24 @@
-Popula Drip Smart Contract
+Popula Drip Contract
 ==================
 
-A [smart contract] written in [Rust] for an app initialized with [create-near-app]
-
-
-Quick Start
-===========
-
-Before you compile this code, you will need to install Rust with [correct target]
-
+An implementation for non-transferrable-fungible-token(NTFT), and a customized minting method.
+See https://github.com/beepopula/near-non-transferrable-token for more details
 
 Exploring The Code
 ==================
 
-1. The main smart contract code lives in `src/lib.rs`. You can compile it with
-   the `./compile` script.
-2. Tests: You can run smart contract tests with the `./test` script. This runs
-   standard Rust tests using [cargo] with a `--nocapture` flag so that you
-   can see any debug info you print to the console.
+## Terminology
 
+* `owner_id`: The owner of this contract.
+* `metadata`: regular fungible token metadata.
+* `token`: Implementation for NTFT.
+* `white_list`: A list of outer reputation source contracts.  
 
-  [smart contract]: https://docs.near.org/docs/develop/contracts/overview
-  [Rust]: https://www.rust-lang.org/
-  [create-near-app]: https://github.com/near/create-near-app
-  [correct target]: https://github.com/near/near-sdk-rs#pre-requisites
-  [cargo]: https://doc.rust-lang.org/book/ch01-03-hello-cargo.html
+## Function specification
+
+### ft_collect
+The only minting method for contracts who wants to rely on this contract's account book and any other derivative functions. It collects specific method on other contracts through cross-contract call and gather those values to its account book. The only thing need to do for those contracts being called is to prove that the signer and the collector contract is correct.
+
+## Build
+
+Run `RUSTFLAGS='-C link-arg=-s' cargo build --all --target wasm32-unknown-unknown --release` to build the project.
