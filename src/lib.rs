@@ -17,7 +17,7 @@ NOTES:
 */
 
 use near_non_transferrable_token::fungible_token::core_impl::{FungibleToken, Account};
-use near_non_transferrable_token::fungible_token::core::{FungibleTokenCore, TokenSource};
+use near_non_transferrable_token::fungible_token::core::{FungibleTokenCore};
 use near_non_transferrable_token::fungible_token::account::FungibleTokenAccount;
 use near_non_transferrable_token::fungible_token::sender::FungibleTokenSender;
 use near_non_transferrable_token::fungible_token::resolver::FungibleTokenResolver;
@@ -34,7 +34,7 @@ use near_sdk::collections::{LazyOption, UnorderedMap, UnorderedSet, LookupMap};
 use near_sdk::json_types::{U128};
 use near_sdk::serde::{Serialize, Deserialize};
 use near_sdk::serde_json::{json, self};
-use near_sdk::{env, log, near_bindgen, AccountId, Balance, PanicOnDefault, PromiseOrValue, Promise, Gas};
+use near_sdk::{env, log, near_bindgen, AccountId, Balance, PanicOnDefault, PromiseOrValue, Promise, Gas, bs58, base64};
 use utils::{get_root_id};
 use std::collections::{HashSet, HashMap};
 use std::convert::TryFrom;
@@ -73,11 +73,6 @@ const THIS_FUNCTION_CALL_GAS: u64  = 50_000_000_000_000;
 const COLLECT_DRIP_GAS: u64 = 10_000_000_000_000;
 const RESOLVE_COLLECT_DRIP_GAS_BASE: u64 = 3_000_000_000_000;
 const RESOLVE_COLLECT_DRIP_GAS_X: u64 = 2_000_000_000_000;
-
-#[derive(BorshDeserialize, BorshSerialize)]
-pub struct OldAccount {
-    pub contract_ids: UnorderedMap<Option<AccountId>, HashMap<TokenSource, Balance>>,
-}
 
 #[near_bindgen]
 impl Contract {
@@ -126,6 +121,14 @@ impl Contract {
         }
     }
 
+    #[init(ignore_state)]
+    pub fn renew() -> Self {
+        let old_contract: Contract = env::state_read().unwrap();
+        assert!(env::predecessor_account_id() == old_contract.owner_id, "not owner");
+        env::storage_remove(&b"m".to_vec());
+        old_contract
+    }
+
     pub fn set_white_list(&mut self, contract_id: AccountId, del: bool) {
         match del {
             true => self.white_list.remove(&contract_id),
@@ -148,11 +151,16 @@ impl Contract {
 
         let account = self.token.accounts.get(&sender_id).unwrap();
         let mut unregister_count = 0;
-        collects.iter().for_each(|contract_id| {
-            if account.is_registered(&contract_id) == false {
-                unregister_count += 1;
+        let collects: Vec<AccountId> = collects.into_iter().filter(|contract_id| {
+            if get_root_id(contract_id.clone()) == get_root_id(env::current_account_id()) || self.white_list.get(&contract_id).is_some() {
+                if account.is_registered(&contract_id) == false {
+                    unregister_count += 1;
+                }
+                true
+            } else {
+                false
             }
-        });
+        }).collect();
         assert!(self.token.account_storage_usage as u128 * env::storage_byte_cost() * unregister_count <= env::attached_deposit() + storage_balance, "not enough deposit");
 
         assert!(collects.len() as u64 * (COLLECT_DRIP_GAS + RESOLVE_COLLECT_DRIP_GAS_X) + RESOLVE_COLLECT_DRIP_GAS_BASE < (env::prepaid_gas() - Gas::from(THIS_FUNCTION_CALL_GAS)).0, "not enough gas");
