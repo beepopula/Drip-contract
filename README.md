@@ -1,8 +1,8 @@
 Popula Drip Contract
 ==================
 
-An implementation for non-transferrable-fungible-token(NTFT), and a customized minting method.
-See https://github.com/beepopula/near-non-transferrable-token for more details
+An implementation for non-transferable-fungible-token(NTFT), and a customized minting method.
+See https://github.com/beepopula/near-non-transferable-token for more details
 
 Exploring The Code
 ==================

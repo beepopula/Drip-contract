@@ -16,17 +16,17 @@ NOTES:
     keys on its account.
 */
 
-use near_non_transferrable_token::fungible_token::core_impl::{FungibleToken, Account};
-use near_non_transferrable_token::fungible_token::core::{FungibleTokenCore};
-use near_non_transferrable_token::fungible_token::account::FungibleTokenAccount;
-use near_non_transferrable_token::fungible_token::sender::FungibleTokenSender;
-use near_non_transferrable_token::fungible_token::resolver::FungibleTokenResolver;
-use near_non_transferrable_token::fungible_token::metadata::{
+use near_non_transferable_token::fungible_token::core_impl::{FungibleToken, Account};
+use near_non_transferable_token::fungible_token::core::{FungibleTokenCore};
+use near_non_transferable_token::fungible_token::account::FungibleTokenAccount;
+use near_non_transferable_token::fungible_token::sender::FungibleTokenSender;
+use near_non_transferable_token::fungible_token::resolver::FungibleTokenResolver;
+use near_non_transferable_token::fungible_token::metadata::{
     FungibleTokenMetadata, FungibleTokenMetadataProvider, FT_METADATA_SPEC,
 };
 
-use near_non_transferrable_token::{impl_fungible_token_core, impl_fungible_token_storage};
-use near_non_transferrable_token::storage_management::{
+use near_non_transferable_token::{impl_fungible_token_core, impl_fungible_token_storage};
+use near_non_transferable_token::storage_management::{
     StorageManagement, StorageBalance, StorageBalanceBounds
 };
 use near_sdk::borsh::{self, BorshDeserialize, BorshSerialize};
