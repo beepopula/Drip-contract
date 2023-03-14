@@ -9,4 +9,4 @@ crate-type = ["cdylib", "rlib"]
 
 [dependencies]
 near-sdk = "4.1.0-pre.3"
-near-non-transferable-token = "0.0.4"
+near-non-transferable-token = { path = "../near-non-transferable-token/near-non-transferable-token", version = "0.0.5" }
