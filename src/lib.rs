@@ -111,29 +111,6 @@ impl Contract {
         this
     }
 
-
-
-    // pub fn fix(&self) {
-    //     assert!(env::predecessor_account_id() == self.owner_id, "not owner");
-    //     const ATOMIC_OP_REGISTER: u64 = std::u64::MAX - 2;
-    //     const EVICTED_REGISTER: u64 = std::u64::MAX - 1;
-    //     let prefix = b"a".to_vec();
-    //     let mut iterator_id = unsafe { sys::storage_iter_prefix(prefix.len() as _, prefix.as_ptr() as _) };
-    //     for i in 0..10 {
-    //         iterator_id = unsafe { sys::storage_iter_next(iterator_id as _, ATOMIC_OP_REGISTER as _, EVICTED_REGISTER as _) };
-    //         let key = expect_register(env::read_register(ATOMIC_OP_REGISTER));
-    //         let value = env::storage_read(&key).unwrap();
-    //         match OldAccount::deserialize(&mut value.as_slice()) {
-    //             Ok(account) => {
-    //                 let new_account = NewAccount
-    //             },
-    //             Err(_) => {}
-    //         }
-    //     }
-        
-        
-    // }
-
     pub fn set_white_list(&mut self, contract_id: AccountId, del: bool) {
         assert!(env::predecessor_account_id() == self.owner_id, "not owner");
         match del {
